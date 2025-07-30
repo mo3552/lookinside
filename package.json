@@ -29,6 +29,7 @@
 		"@vitejs/plugin-vue": "^4.4.0",
 		"electron": "^27.0.0",
 		"electron-builder": "^24.6.4",
+		"tree-kill": "^1.2.2",
 		"typescript": "^5.2.2",
 		"vite": "^4.4.9",
 		"vite-plugin-electron": "^0.15.5",
@@ -36,9 +37,9 @@
 		"vue-tsc": "^1.8.8"
 	},
 	"dependencies": {
-		"vue": "^3.3.4",
+		"@types/node": "^20.5.0",
 		"systeminformation": "^5.21.7",
-		"@types/node": "^20.5.0"
+		"vue": "^3.3.4"
 	},
 	"build": {
 		"appId": "com.lookinside.app",
