@@ -33,6 +33,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
 	removeAllListeners: (channel: string) => {
 		ipcRenderer.removeAllListeners(channel);
 	},
+
+	// 파일 저장 관련 API
+	saveSystemInfo: () => ipcRenderer.invoke('save-system-info'),
 });
 
 // --------- Preload scripts are loaded before every page load ---------

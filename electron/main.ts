@@ -2,6 +2,7 @@ import { app, BrowserWindow, ipcMain, Menu, dialog } from 'electron';
 import { join } from 'path';
 import si from 'systeminformation';
 import path from 'path';
+import fs from 'fs';
 
 // The built directory structure
 //
@@ -85,6 +86,54 @@ function createMenu() {
 		{
 			label: '파일',
 			submenu: [
+				{
+					label: '저장',
+					accelerator: 'CmdOrCtrl+S',
+					click: async () => {
+						try {
+							const systemInfo = await getAllSystemInfo();
+							const result = await dialog.showSaveDialog(win!, {
+								title: '시스템 정보 저장',
+								defaultPath: `system_info_${new Date()
+									.toISOString()
+									.slice(0, 19)
+									.replace(/:/g, '-')}.txt`,
+								filters: [
+									{
+										name: '텍스트 파일',
+										extensions: ['txt'],
+									},
+									{ name: '모든 파일', extensions: ['*'] },
+								],
+							});
+
+							if (!result.canceled && result.filePath) {
+								const content =
+									formatSystemInfoForSave(systemInfo);
+								fs.writeFileSync(
+									result.filePath,
+									content,
+									'utf8'
+								);
+								dialog.showMessageBox(win!, {
+									type: 'info',
+									title: '저장 완료',
+									message:
+										'시스템 정보가 성공적으로 저장되었습니다.',
+									buttons: ['확인'],
+									defaultId: 0,
+								});
+							}
+						} catch (error) {
+							console.error('파일 저장 실패:', error);
+							dialog.showErrorBox(
+								'저장 오류',
+								'시스템 정보 저장 중 오류가 발생했습니다.'
+							);
+						}
+					},
+				},
+				{ type: 'separator' },
 				{
 					label: '종료',
 					accelerator:
@@ -376,6 +425,207 @@ ipcMain.handle('get-system-uptime', async () => {
 		};
 	} catch (error) {
 		console.error('시스템 업타임 조회 실패:', error);
+		throw error;
+	}
+});
+
+// 모든 시스템 정보를 가져오는 함수
+async function getAllSystemInfo() {
+	try {
+		const [
+			cpu,
+			mem,
+			os,
+			diskLayout,
+			fsSize,
+			networkInterfaces,
+			baseboard,
+			bios,
+			chassis,
+			cpuLoad,
+			time,
+		] = await Promise.all([
+			si.cpu(),
+			si.mem(),
+			si.osInfo(),
+			si.diskLayout(),
+			si.fsSize(),
+			si.networkInterfaces(),
+			si.baseboard(),
+			si.bios(),
+			si.chassis(),
+			si.currentLoad(),
+			si.time(),
+		]);
+
+		return {
+			cpu,
+			memory: mem,
+			os,
+			diskLayout,
+			fsSize,
+			networkInterfaces,
+			motherboard: {
+				baseboard,
+				bios,
+				chassis,
+			},
+			cpuLoad,
+			time,
+		};
+	} catch (error) {
+		console.error('전체 시스템 정보 조회 실패:', error);
+		throw error;
+	}
+}
+
+// 시스템 정보를 텍스트 형식으로 포맷하는 함수
+function formatSystemInfoForSave(systemInfo: any): string {
+	const formatBytes = (bytes: number) => {
+		if (bytes === 0) return '0 Bytes';
+		const k = 1024;
+		const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+		const i = Math.floor(Math.log(bytes) / Math.log(k));
+		return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+	};
+
+	const formatUptime = (seconds: number) => {
+		const days = Math.floor(seconds / 86400);
+		const hours = Math.floor((seconds % 86400) / 3600);
+		const minutes = Math.floor((seconds % 3600) / 60);
+		return `${days}일 ${hours}시간 ${minutes}분`;
+	};
+
+	let content = '=== LookInside 시스템 정보 보고서 ===\n';
+	content += `생성 시간: ${new Date().toLocaleString('ko-KR')}\n\n`;
+
+	// CPU 정보
+	content += '=== CPU 정보 ===\n';
+	content += `제조사: ${systemInfo.cpu.manufacturer}\n`;
+	content += `모델: ${systemInfo.cpu.brand}\n`;
+	content += `물리적 코어: ${systemInfo.cpu.physicalCores}\n`;
+	content += `논리적 코어: ${systemInfo.cpu.cores}\n`;
+	content += `현재 속도: ${systemInfo.cpu.speed} GHz\n`;
+	content += `최대 속도: ${systemInfo.cpu.speedMax} GHz\n`;
+	content += `최소 속도: ${systemInfo.cpu.speedMin} GHz\n`;
+	content += `소켓: ${systemInfo.cpu.socket || 'N/A'}\n`;
+	content += `캐시: ${systemInfo.cpu.cache}\n`;
+	content += `현재 사용률: ${systemInfo.cpuLoad.currentLoad.toFixed(2)}%\n\n`;
+
+	// 메모리 정보
+	content += '=== 메모리 정보 ===\n';
+	content += `총 메모리: ${formatBytes(systemInfo.memory.total)}\n`;
+	content += `사용 중: ${formatBytes(systemInfo.memory.used)}\n`;
+	content += `사용 가능: ${formatBytes(systemInfo.memory.available)}\n`;
+	content += `여유 메모리: ${formatBytes(systemInfo.memory.free)}\n`;
+	content += `활성 메모리: ${formatBytes(systemInfo.memory.active)}\n`;
+	content += `총 스왑: ${formatBytes(systemInfo.memory.swaptotal)}\n`;
+	content += `사용된 스왑: ${formatBytes(systemInfo.memory.swapused)}\n\n`;
+
+	// 운영체제 정보
+	content += '=== 운영체제 정보 ===\n';
+	content += `플랫폼: ${systemInfo.os.platform}\n`;
+	content += `배포판: ${systemInfo.os.distro}\n`;
+	content += `릴리즈: ${systemInfo.os.release}\n`;
+	content += `코드네임: ${systemInfo.os.codename}\n`;
+	content += `아키텍처: ${systemInfo.os.arch}\n`;
+	content += `호스트명: ${systemInfo.os.hostname}\n`;
+	content += `코드페이지: ${systemInfo.os.codepage}\n`;
+	content += `시리얼: ${systemInfo.os.serial}\n`;
+	content += `빌드: ${systemInfo.os.build}\n`;
+	content += `서비스팩: ${systemInfo.os.servicepack}\n`;
+	content += `UEFI: ${systemInfo.os.uefi ? '예' : '아니오'}\n\n`;
+
+	// 메인보드 정보
+	content += '=== 메인보드 정보 ===\n';
+	content += `제조사: ${
+		systemInfo.motherboard.baseboard.manufacturer || 'N/A'
+	}\n`;
+	content += `모델: ${systemInfo.motherboard.baseboard.model || 'N/A'}\n`;
+	content += `버전: ${systemInfo.motherboard.baseboard.version || 'N/A'}\n`;
+	content += `시리얼: ${systemInfo.motherboard.baseboard.serial || 'N/A'}\n`;
+	content += `BIOS 제조사: ${
+		systemInfo.motherboard.bios.manufacturer || 'N/A'
+	}\n`;
+	content += `BIOS 버전: ${systemInfo.motherboard.bios.version || 'N/A'}\n`;
+	content += `BIOS 릴리즈: ${
+		systemInfo.motherboard.bios.releaseDate || 'N/A'
+	}\n\n`;
+
+	// 디스크 정보
+	content += '=== 디스크 정보 ===\n';
+	systemInfo.diskLayout.forEach((disk: any, index: number) => {
+		content += `디스크 ${index + 1}:\n`;
+		content += `  제조사: ${disk.manufacturer || 'N/A'}\n`;
+		content += `  모델: ${disk.name || 'N/A'}\n`;
+		content += `  시리얼: ${disk.serialNum || 'N/A'}\n`;
+		content += `  크기: ${formatBytes(disk.size)}\n`;
+		content += `  인터페이스: ${disk.interfaceType || 'N/A'}\n`;
+		content += `  타입: ${disk.type || 'N/A'}\n\n`;
+	});
+
+	// 파일 시스템 정보
+	content += '=== 파일 시스템 정보 ===\n';
+	systemInfo.fsSize.forEach((fs: any, index: number) => {
+		content += `파티션 ${index + 1}:\n`;
+		content += `  마운트: ${fs.mount}\n`;
+		content += `  타입: ${fs.type}\n`;
+		content += `  크기: ${formatBytes(fs.size)}\n`;
+		content += `  사용: ${formatBytes(fs.used)}\n`;
+		content += `  여유: ${formatBytes(fs.size - fs.used)}\n`;
+		content += `  사용률: ${((fs.used / fs.size) * 100).toFixed(2)}%\n\n`;
+	});
+
+	// 네트워크 정보
+	content += '=== 네트워크 정보 ===\n';
+	systemInfo.networkInterfaces.forEach((iface: any, index: number) => {
+		content += `인터페이스 ${index + 1}:\n`;
+		content += `  이름: ${iface.iface}\n`;
+		content += `  타입: ${iface.type}\n`;
+		content += `  MAC 주소: ${iface.mac}\n`;
+		content += `  IPv4: ${iface.ip4 || 'N/A'}\n`;
+		content += `  IPv6: ${iface.ip6 || 'N/A'}\n`;
+		content += `  내부: ${iface.internal ? '예' : '아니오'}\n`;
+		content += `  가상: ${iface.virtual ? '예' : '아니오'}\n\n`;
+	});
+
+	// 시스템 업타임
+	content += '=== 시스템 업타임 ===\n';
+	content += `업타임: ${formatUptime(systemInfo.time.uptime)}\n`;
+	content += `타임존: ${systemInfo.time.timezone}\n`;
+	content += `타임존 이름: ${systemInfo.time.timezoneName}\n\n`;
+
+	content += '=== 보고서 끝 ===\n';
+	return content;
+}
+
+// 파일 저장 IPC 핸들러
+ipcMain.handle('save-system-info', async () => {
+	try {
+		const systemInfo = await getAllSystemInfo();
+		const result = await dialog.showSaveDialog(win!, {
+			title: '시스템 정보 저장',
+			defaultPath: `system_info_${new Date()
+				.toISOString()
+				.slice(0, 19)
+				.replace(/:/g, '-')}.txt`,
+			filters: [
+				{ name: '텍스트 파일', extensions: ['txt'] },
+				{ name: '모든 파일', extensions: ['*'] },
+			],
+		});
+
+		if (!result.canceled && result.filePath) {
+			const content = formatSystemInfoForSave(systemInfo);
+			fs.writeFileSync(result.filePath, content, 'utf8');
+			return {
+				success: true,
+				message: '시스템 정보가 성공적으로 저장되었습니다.',
+			};
+		}
+		return { success: false, message: '저장이 취소되었습니다.' };
+	} catch (error) {
+		console.error('파일 저장 실패:', error);
 		throw error;
 	}
 });
